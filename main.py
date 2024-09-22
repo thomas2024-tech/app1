@@ -36,4 +36,4 @@ def publish_version(channel, appname, version_number):
 
 if __name__ == "__main__":
     # Example usage
-    publish_version('version_channel', 'app1', '1.2')
+    publish_version('version_channel', 'app1', '1.3')
