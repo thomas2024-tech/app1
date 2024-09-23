@@ -1,0 +1,17 @@
+services:
+  app1:
+    image: 1234a4321/app1:1.3
+    ports:
+      - "8081:80"  # Adjust this port if necessary
+    environment:
+      REDIS_HOST: redis  # Link to the Redis container by its service name
+      REDIS_PORT: 6379
+      REDIS_DB: 0
+    networks:
+      - my_network  # Use the external network where Redis is already defined
+    depends_on:
+      - redis  # Ensure the app waits for Redis, if it’s not already running
+
+networks:
+  my_network:
+    external: true  # Indicating the external shared network
