@@ -2,6 +2,8 @@ from commlib.transports.redis import ConnectionParameters, Publisher
 from commlib.pubsub import PubSubMessage
 import os
 
+#This is the firmware of first app
+
 class VersionMessage(PubSubMessage):
     """Message format for version updates."""
     appname: str

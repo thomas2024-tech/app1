@@ -9,8 +9,6 @@ services:
       REDIS_DB: 0
     networks:
       - my_network  # Use the external network where Redis is already defined
-    depends_on:
-      - redis  # Ensure the app waits for Redis, if it’s not already running
 
 networks:
   my_network:
