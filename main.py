@@ -115,7 +115,10 @@ if __name__ == "__main__":
     appname, version_number = load_docker_compose_data()
 
     # Connection parameters for Redis
-    redis_ip = os.getenv('REDIS_HOST', '192.168.1.52')
+    redis_ip = os.getenv('REDIS_HOST')
+    if not redis_ip:
+        logging.error("REDIS_HOST environment variable is not set.")
+        sys.exit(1)
 
     # Initialize the RPC node
     node = Node(node_name='docker_rpc_server', connection_params=ConnectionParameters(host=redis_ip, port=6379))
@@ -126,8 +129,8 @@ if __name__ == "__main__":
     # Example parameters for version info publishing
     channel = 'version_channel'
     dependencies = {
-        'app2': '2.1',
-        'app3': '3.0'
+        'app2': '1.1',
+        'app3': '1.1'
     }
     
     # Publish the version message (this can also be done periodically or based on events)
