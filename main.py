@@ -130,7 +130,7 @@ if __name__ == "__main__":
     channel = 'version_channel'
     dependencies = {
         'app2': '1.1',
-        'app3': '1.1'
+        'app3': '1.2'
     }
     
     # Publish the version message (this can also be done periodically or based on events)
