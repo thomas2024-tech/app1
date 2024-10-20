@@ -129,7 +129,7 @@ if __name__ == "__main__":
     # Example parameters for version info publishing
     channel = 'version_channel'
     dependencies = {
-        'app2': '1.1',
+        'app2': '1.2',
         'app3': '1.2'
     }
     
