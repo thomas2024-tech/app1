@@ -92,7 +92,7 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
 
 class DockerComposeRPCService(BaseRPCService):
     def __init__(self, node: Node, rpc_name: str):
-        # Initialize the base service first with the rpc_name
+        # Initialize the base service first
         super().__init__(
             msg_type=DockerCommandRequest,
             rpc_name=rpc_name
@@ -101,8 +101,13 @@ class DockerComposeRPCService(BaseRPCService):
         self._node = node
         self.msg_type = DockerCommandRequest
         self.resp_type = DockerCommandResponse
-        # Register this service with the node
-        node.add_rpc_service(self)
+        # Register this service with the node using the correct method
+        self._node.create_rpc_service(
+            rpc_name=rpc_name,
+            request_msg_cls=DockerCommandRequest,
+            response_msg_cls=DockerCommandResponse,
+            handler=self.process_request
+        )
     
     def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
         """
@@ -201,25 +206,15 @@ if __name__ == "__main__":
             connection_params=conn_params
         )
 
-        # Create the RPC service before starting the node
-        service = DockerComposeRPCService(
-            node=node,
-            rpc_name='docker_compose_service_machine1'
-        )
-
         # Start the node in a background thread
         node_thread = threading.Thread(target=node.run, daemon=True)
         node_thread.start()
 
-        # Set up periodic version publishing
-        def publish_version_periodically():
-            while True:
-                try:
-                    publish_version(channel, appname, version_number, redis_ip, dependencies)
-                    time.sleep(60)
-                except Exception as e:
-                    logging.error(f"Error publishing version: {e}")
-                    time.sleep(5)
+        # Create the RPC service
+        service = DockerComposeRPCService(
+            node=node,
+            rpc_name='docker_compose_service_machine1'
+        )
 
         # Publish initial version information
         channel = 'version_channel'
@@ -230,6 +225,16 @@ if __name__ == "__main__":
 
         # First publish version to establish presence
         publish_version(channel, appname, version_number, redis_ip, dependencies)
+
+        # Set up periodic version publishing
+        def publish_version_periodically():
+            while True:
+                try:
+                    publish_version(channel, appname, version_number, redis_ip, dependencies)
+                    time.sleep(60)  # Publish every minute
+                except Exception as e:
+                    logging.error(f"Error publishing version: {e}")
+                    time.sleep(5)
 
         # Start version publisher in background
         publisher_thread = threading.Thread(target=publish_version_periodically, daemon=True)
