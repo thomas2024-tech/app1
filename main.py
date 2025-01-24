@@ -92,18 +92,28 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
 
 class DockerComposeRPCService(BaseRPCService):
     def __init__(self, node: Node, rpc_name: str):
-        # First, initialize the base service with the required message types
+        # Store the rpc_name as an instance variable before calling super()
+        self._rpc_name = rpc_name
+        
+        # Initialize the base service with message types
         super().__init__(
             msg_type=DockerCommandRequest,
-            rpc_name=rpc_name
+            rpc_name=rpc_name  # Pass the rpc_name to the parent class
         )
-        # Store our node reference
-        self._node = node
         
+        # Store node reference
+        self._node = node
+    
+    # Property to access rpc_name
+    @property
+    def rpc_name(self):
+        """Return the RPC service name."""
+        return self._rpc_name
+
     def start(self):
         """
-        Keep the service running and process messages.
-        This method keeps the Node thread alive by maintaining an active connection.
+        Keep the service running and maintain the Node connection.
+        This method will run in the main thread and keep everything alive.
         """
         logging.info(f"Starting RPC service: {self.rpc_name}")
         try:
@@ -113,6 +123,7 @@ class DockerComposeRPCService(BaseRPCService):
             logging.error(f"Error in RPC service: {e}")
 
     def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
+
         logging.info(f"Processing request: {message.command} for directory: {message.directory}")
         
         command = message.command
