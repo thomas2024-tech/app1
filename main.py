@@ -91,38 +91,32 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
             logging.info(f'  Dependent app {dep_app} version {dep_version}')
 
 class DockerComposeRPCService(BaseRPCService):
-    """RPC service to handle Docker Compose commands."""
+    """
+    RPC service to handle Docker Compose commands.
+    This service processes incoming requests to manage Docker containers.
+    """
     
     def __init__(self, node: Node, rpc_name: str):
-        # Initialize the base service with the message types
+        # Store the node reference for later use
+        self._node = node
+        
+        # Define the message types this service will handle
+        self.msg_type = DockerCommandRequest
+        self.resp_type = DockerCommandResponse
+        
+        # Initialize the base service with these configurations
         super().__init__(
-            msg_type=DockerCommandRequest,
+            msg_type=self.msg_type,
             rpc_name=rpc_name
         )
-        self._node = node
-        # Set up message handling
-        self.register_handler(self.handle_message)
     
-    def register_handler(self, handler_func):
-        """Register the message handler with the node"""
-        self._node.register_handler(
-            self.rpc_name,
-            handler_func,
-            msg_type=self.msg_type
-        )
-    
-    def start(self):
-        """Keep the service running and processing messages"""
-        logging.info(f"Starting RPC service: {self.rpc_name}")
-        try:
-            while True:
-                time.sleep(0.1)
-        except Exception as e:
-            logging.error(f"Error in RPC service: {e}")
-
-    def handle_message(self, message: DockerCommandRequest) -> DockerCommandResponse:
-        """Handle incoming Docker commands"""
-        logging.info(f"Handling command: {message.command} for directory: {message.directory}")
+    def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
+        """
+        Process incoming Docker command requests.
+        This is the method that BaseRPCService expects us to implement.
+        """
+        logging.info(f"Processing request: {message.command} for directory: {message.directory}")
+        
         command = message.command
         directory = message.directory
         docker_compose_file = os.path.join(directory, 'docker-compose.yml')
@@ -217,11 +211,21 @@ if __name__ == "__main__":
         node_thread = threading.Thread(target=node.run, daemon=True)
         node_thread.start()
 
-        # Create and register the RPC service
+        # Create the RPC service
         service = DockerComposeRPCService(
             node=node,
             rpc_name='docker_compose_service_machine1'
         )
+
+        # Set up periodic version publishing
+        def publish_version_periodically():
+            while True:
+                try:
+                    publish_version(channel, appname, version_number, redis_ip, dependencies)
+                    time.sleep(60)  # Publish every minute
+                except Exception as e:
+                    logging.error(f"Error publishing version: {e}")
+                    time.sleep(5)  # Wait a bit before retrying
 
         # Publish initial version information
         channel = 'version_channel'
@@ -233,18 +237,19 @@ if __name__ == "__main__":
         # First publish version to establish presence
         publish_version(channel, appname, version_number, redis_ip, dependencies)
 
-        # Set up a periodic version publisher
-        def publish_version_periodically():
-            while True:
-                publish_version(channel, appname, version_number, redis_ip, dependencies)
-                time.sleep(60)  # Publish every minute
-
         # Start version publisher in background
         publisher_thread = threading.Thread(target=publish_version_periodically, daemon=True)
         publisher_thread.start()
 
-        # Start the service in the main thread
-        service.start()
+        # Keep the main thread alive and handle any cleanup
+        while True:
+            time.sleep(1)
+            if not node_thread.is_alive():
+                logging.error("Node thread died unexpectedly")
+                break
+            if not publisher_thread.is_alive():
+                logging.error("Publisher thread died unexpectedly")
+                break
 
     except Exception as e:
         logging.error(f"Error starting service: {e}")
