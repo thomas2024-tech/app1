@@ -104,7 +104,11 @@ class DockerComposeRPCService(BaseRPCService):
         """Run the service."""
         while True:
             try:
-                self.process_next_message()
+                # Using the correct method from BaseRPCService
+                message = self._node.recv_message()
+                if message:
+                    response = self.handle_message(message)
+                    self._node.send_response(response)
             except Exception as e:
                 logging.error(f"Error processing message: {e}")
     
