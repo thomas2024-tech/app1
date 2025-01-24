@@ -91,24 +91,18 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
             logging.info(f'  Dependent app {dep_app} version {dep_version}')
 
 class DockerComposeRPCService(BaseRPCService):
-    """
-    RPC service to handle Docker Compose commands.
-    This service processes incoming requests to manage Docker containers.
-    """
-    
     def __init__(self, node: Node, rpc_name: str):
-        # Store the node reference for later use
-        self._node = node
-        
-        # Define the message types this service will handle
-        self.msg_type = DockerCommandRequest
-        self.resp_type = DockerCommandResponse
-        
-        # Initialize the base service with these configurations
+        # Initialize the base service first with the rpc_name
         super().__init__(
-            msg_type=self.msg_type,
+            msg_type=DockerCommandRequest,
             rpc_name=rpc_name
         )
+        # Store the node reference and set up message types
+        self._node = node
+        self.msg_type = DockerCommandRequest
+        self.resp_type = DockerCommandResponse
+        # Register this service with the node
+        node.add_rpc_service(self)
     
     def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
         """
@@ -207,25 +201,25 @@ if __name__ == "__main__":
             connection_params=conn_params
         )
 
-        # Start the node in a background thread
-        node_thread = threading.Thread(target=node.run, daemon=True)
-        node_thread.start()
-
-        # Create the RPC service
+        # Create the RPC service before starting the node
         service = DockerComposeRPCService(
             node=node,
             rpc_name='docker_compose_service_machine1'
         )
+
+        # Start the node in a background thread
+        node_thread = threading.Thread(target=node.run, daemon=True)
+        node_thread.start()
 
         # Set up periodic version publishing
         def publish_version_periodically():
             while True:
                 try:
                     publish_version(channel, appname, version_number, redis_ip, dependencies)
-                    time.sleep(60)  # Publish every minute
+                    time.sleep(60)
                 except Exception as e:
                     logging.error(f"Error publishing version: {e}")
-                    time.sleep(5)  # Wait a bit before retrying
+                    time.sleep(5)
 
         # Publish initial version information
         channel = 'version_channel'
@@ -241,15 +235,23 @@ if __name__ == "__main__":
         publisher_thread = threading.Thread(target=publish_version_periodically, daemon=True)
         publisher_thread.start()
 
-        # Keep the main thread alive and handle any cleanup
-        while True:
-            time.sleep(1)
-            if not node_thread.is_alive():
-                logging.error("Node thread died unexpectedly")
-                break
-            if not publisher_thread.is_alive():
-                logging.error("Publisher thread died unexpectedly")
-                break
+        # Keep the main thread alive while monitoring threads
+        try:
+            while True:
+                if not node_thread.is_alive():
+                    raise Exception("Node thread died unexpectedly")
+                if not publisher_thread.is_alive():
+                    raise Exception("Publisher thread died unexpectedly")
+                time.sleep(1)
+        except KeyboardInterrupt:
+            logging.info("Received keyboard interrupt, shutting down...")
+        except Exception as e:
+            logging.error(f"Error in main loop: {e}")
+        finally:
+            # Attempt graceful shutdown
+            logging.info("Shutting down services...")
+            node.stop()
+            sys.exit(0)
 
     except Exception as e:
         logging.error(f"Error starting service: {e}")
