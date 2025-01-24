@@ -91,29 +91,21 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
             logging.info(f'  Dependent app {dep_app} version {dep_version}')
 
 class DockerComposeRPCService(BaseRPCService):
+    """RPC service to handle Docker Compose commands."""
+    
     def __init__(self, node: Node, rpc_name: str):
-        # Initialize the base service first
-        super().__init__(
-            msg_type=DockerCommandRequest,
-            rpc_name=rpc_name
-        )
-        # Store the node reference and set up message types
+        # Store the node reference for later use
         self._node = node
+        # Define the message types this service will handle
         self.msg_type = DockerCommandRequest
         self.resp_type = DockerCommandResponse
-        # Register this service with the node using the correct method
-        self._node.create_rpc_service(
-            rpc_name=rpc_name,
-            request_msg_cls=DockerCommandRequest,
-            response_msg_cls=DockerCommandResponse,
-            handler=self.process_request
+        # Initialize the base service with these configurations
+        super().__init__(
+            msg_type=self.msg_type,
+            rpc_name=rpc_name
         )
     
     def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
-        """
-        Process incoming Docker command requests.
-        This is the method that BaseRPCService expects us to implement.
-        """
         logging.info(f"Processing request: {message.command} for directory: {message.directory}")
         
         command = message.command
@@ -204,6 +196,12 @@ if __name__ == "__main__":
         node = Node(
             node_name='docker_rpc_server_machine1',
             connection_params=conn_params
+        )
+
+        # Create the RPC service
+        service = DockerComposeRPCService(
+            node=node,
+            rpc_name='docker_compose_service_machine1'
         )
 
         # Start the node in a background thread
