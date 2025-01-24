@@ -111,7 +111,7 @@ class DockerComposeRPCService(BaseRPCService):
                     self._node.send_response(response)
             except Exception as e:
                 logging.error(f"Error processing message: {e}")
-    
+                
     def handle_message(self, message: DockerCommandRequest) -> DockerCommandResponse:
         """Handle incoming RPC messages."""
         command = message.command
