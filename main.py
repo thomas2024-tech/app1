@@ -10,6 +10,7 @@ from commlib.transports.redis import ConnectionParameters
 from commlib.pubsub import PubSubMessage
 from commlib.rpc import BaseRPCService, RPCMessage
 import time
+import threading
 
 # Load environment variables from .env file
 load_dotenv()
@@ -93,24 +94,25 @@ class DockerComposeRPCService(BaseRPCService):
     """RPC service to handle Docker Compose commands."""
     
     def __init__(self, node: Node, rpc_name: str):
-        self._node = node
-        self.msg_type = DockerCommandRequest
-        self.resp_type = DockerCommandResponse
+        # Initialize the base RPC service with the message types
         super().__init__(
             msg_type=DockerCommandRequest,
             rpc_name=rpc_name
         )
-        # Register this service with the node
-        self._node.register_rpc_service(self)
+        # Store the node reference
+        self._node = node
+        # Register this service with the node using the correct method
+        self._node.add_service(self)
     
-    def run(self):
+    def start(self):
         """
-        Run the service in a continuous loop, processing incoming messages.
+        Start the service. This method is called by the node when the service
+        is ready to begin processing messages.
         """
+        logging.info(f"Starting RPC service: {self.rpc_name}")
         try:
             while True:
-                # Sleep briefly to prevent CPU overuse
-                time.sleep(0.1)
+                time.sleep(0.1)  # Prevent CPU overuse while keeping service alive
         except Exception as e:
             logging.error(f"Error in RPC service: {e}")
 
@@ -119,6 +121,7 @@ class DockerComposeRPCService(BaseRPCService):
         Handle incoming RPC messages for Docker commands.
         This method is called automatically by the Node when a message arrives.
         """
+        logging.info(f"Received command: {message.command} for directory: {message.directory}")
         command = message.command
         directory = message.directory
         docker_compose_file = os.path.join(directory, 'docker-compose.yml')
@@ -210,7 +213,6 @@ if __name__ == "__main__":
         )
 
         # Create and start node thread
-        import threading
         node_thread = threading.Thread(target=node.run, daemon=True)
         node_thread.start()
 
@@ -230,8 +232,8 @@ if __name__ == "__main__":
         # Publish the version message
         publish_version(channel, appname, version_number, redis_ip, dependencies)
 
-        # Run the service
-        service.run()
+        # Start the service (this will run in the main thread)
+        service.start()
 
     except Exception as e:
         logging.error(f"Error starting service: {e}")
