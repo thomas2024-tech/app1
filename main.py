@@ -9,6 +9,7 @@ from commlib.node import Node
 from commlib.transports.redis import ConnectionParameters
 from commlib.pubsub import PubSubMessage
 from commlib.rpc import BaseRPCService, RPCMessage
+import time
 
 # Load environment variables from .env file
 load_dotenv()
@@ -99,21 +100,25 @@ class DockerComposeRPCService(BaseRPCService):
             msg_type=DockerCommandRequest,
             rpc_name=rpc_name
         )
+        # Register this service with the node
+        self._node.register_rpc_service(self)
     
     def run(self):
-        """Run the service."""
-        while True:
-            try:
-                # Using the correct method from BaseRPCService
-                message = self._node.recv_message()
-                if message:
-                    response = self.handle_message(message)
-                    self._node.send_response(response)
-            except Exception as e:
-                logging.error(f"Error processing message: {e}")
-                
+        """
+        Run the service in a continuous loop, processing incoming messages.
+        """
+        try:
+            while True:
+                # Sleep briefly to prevent CPU overuse
+                time.sleep(0.1)
+        except Exception as e:
+            logging.error(f"Error in RPC service: {e}")
+
     def handle_message(self, message: DockerCommandRequest) -> DockerCommandResponse:
-        """Handle incoming RPC messages."""
+        """
+        Handle incoming RPC messages for Docker commands.
+        This method is called automatically by the Node when a message arrives.
+        """
         command = message.command
         directory = message.directory
         docker_compose_file = os.path.join(directory, 'docker-compose.yml')
