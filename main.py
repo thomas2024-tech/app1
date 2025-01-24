@@ -94,34 +94,35 @@ class DockerComposeRPCService(BaseRPCService):
     """RPC service to handle Docker Compose commands."""
     
     def __init__(self, node: Node, rpc_name: str):
-        # Initialize the base RPC service with the message types
+        # Initialize the base service with the message types
         super().__init__(
             msg_type=DockerCommandRequest,
             rpc_name=rpc_name
         )
-        # Store the node reference
         self._node = node
-        # Register this service with the node using the correct method
-        self._node.add_service(self)
+        # Set up message handling
+        self.register_handler(self.handle_message)
+    
+    def register_handler(self, handler_func):
+        """Register the message handler with the node"""
+        self._node.register_handler(
+            self.rpc_name,
+            handler_func,
+            msg_type=self.msg_type
+        )
     
     def start(self):
-        """
-        Start the service. This method is called by the node when the service
-        is ready to begin processing messages.
-        """
+        """Keep the service running and processing messages"""
         logging.info(f"Starting RPC service: {self.rpc_name}")
         try:
             while True:
-                time.sleep(0.1)  # Prevent CPU overuse while keeping service alive
+                time.sleep(0.1)
         except Exception as e:
             logging.error(f"Error in RPC service: {e}")
 
     def handle_message(self, message: DockerCommandRequest) -> DockerCommandResponse:
-        """
-        Handle incoming RPC messages for Docker commands.
-        This method is called automatically by the Node when a message arrives.
-        """
-        logging.info(f"Received command: {message.command} for directory: {message.directory}")
+        """Handle incoming Docker commands"""
+        logging.info(f"Handling command: {message.command} for directory: {message.directory}")
         command = message.command
         directory = message.directory
         docker_compose_file = os.path.join(directory, 'docker-compose.yml')
@@ -212,27 +213,37 @@ if __name__ == "__main__":
             connection_params=conn_params
         )
 
-        # Create and start node thread
+        # Start the node in a background thread
         node_thread = threading.Thread(target=node.run, daemon=True)
         node_thread.start()
 
-        # Create the RPC service
+        # Create and register the RPC service
         service = DockerComposeRPCService(
             node=node,
             rpc_name='docker_compose_service_machine1'
         )
 
-        # Example parameters for version info publishing
+        # Publish initial version information
         channel = 'version_channel'
         dependencies = {
             'app2': '1.1',
             'app3': '1.1'
         }
 
-        # Publish the version message
+        # First publish version to establish presence
         publish_version(channel, appname, version_number, redis_ip, dependencies)
 
-        # Start the service (this will run in the main thread)
+        # Set up a periodic version publisher
+        def publish_version_periodically():
+            while True:
+                publish_version(channel, appname, version_number, redis_ip, dependencies)
+                time.sleep(60)  # Publish every minute
+
+        # Start version publisher in background
+        publisher_thread = threading.Thread(target=publish_version_periodically, daemon=True)
+        publisher_thread.start()
+
+        # Start the service in the main thread
         service.start()
 
     except Exception as e:
