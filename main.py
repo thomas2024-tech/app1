@@ -99,15 +99,6 @@ class DockerComposeRPCService(BaseRPCService):
         )
         self._node = node
 
-    def run(self):
-        """Handle RPC messages"""
-        logging.info(f"Starting RPC service {self.rpc_name}")
-        while True:
-            try:
-                time.sleep(0.1)
-            except Exception as e:
-                logging.error(f"Error in service: {e}")
-
     @property
     def rpc_name(self):
         return self._rpc_name
@@ -224,8 +215,9 @@ if __name__ == "__main__":
         publisher_thread = threading.Thread(target=publish_version_periodically, daemon=True)
         publisher_thread.start()
 
-        service.run()
-
+        while True:
+            time.sleep(0.1)
+            
     except KeyboardInterrupt:
         logging.info("Received keyboard interrupt, shutting down...")
     except Exception as e:
