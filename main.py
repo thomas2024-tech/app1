@@ -113,8 +113,10 @@ class DockerComposeRPCService(BaseRPCService):
         return self._rpc_name
 
     def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
-
-        logging.info(f"Processing request: Command={message.command}, Dir={message.directory}, Version={message.new_version}")
+        logging.info("🔥 START PROCESSING REQUEST")
+        logging.info(f"🔥 Command: {message.command}")
+        logging.info(f"🔥 Directory: {message.directory}")
+        logging.info(f"🔥 New Version: {message.new_version}")
         if not os.path.exists(message.directory):
             return DockerCommandResponse(success=False, message=f"Directory not found: {message.directory}")
         
