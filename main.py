@@ -98,16 +98,20 @@ class DockerComposeRPCService(BaseRPCService):
             rpc_name=rpc_name
         )
         self._node = node
+        # Create an RPC service using the node's method
+        self.rpc_service = node.create_rpc_service(
+            rpc_name,
+            DockerCommandRequest,
+            DockerCommandResponse,
+            self.process_request
+        )
 
     @property
     def rpc_name(self):
         return self._rpc_name
 
     def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
-        logging.info("🔥 START PROCESSING REQUEST")
-        logging.info(f"🔥 Command: {message.command}")
-        logging.info(f"🔥 Directory: {message.directory}")
-        logging.info(f"🔥 New Version: {message.new_version}")
+        logging.info("📥 Received update request")
         if not os.path.exists(message.directory):
             return DockerCommandResponse(success=False, message=f"Directory not found: {message.directory}")
         
@@ -217,7 +221,7 @@ if __name__ == "__main__":
 
         while True:
             time.sleep(0.1)
-            
+
     except KeyboardInterrupt:
         logging.info("Received keyboard interrupt, shutting down...")
     except Exception as e:
