@@ -104,10 +104,9 @@ class DockerComposeRPCService(BaseRPCService):
         logging.info(f"Starting RPC service {self.rpc_name}")
         while True:
             try:
-                self._node.process_next()
                 time.sleep(0.1)
             except Exception as e:
-                logging.error(f"Error processing message: {e}")
+                logging.error(f"Error in service: {e}")
 
     @property
     def rpc_name(self):
