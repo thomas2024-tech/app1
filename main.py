@@ -124,7 +124,7 @@ class DockerComposeRPCService(BaseRPCService):
 
     def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
 
-        logging.info(f"Processing request: {message.command} for directory: {message.directory}")
+        logging.info(f"Processing request: {message.command}, for directory: {message.directory}, New Version: {message.new_version}")
         
         command = message.command
         directory = message.directory
