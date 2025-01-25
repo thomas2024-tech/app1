@@ -99,6 +99,15 @@ class DockerComposeRPCService(BaseRPCService):
         )
         self._node = node
 
+    def start(self):
+        """Keep the service running."""
+        logging.info(f"Starting RPC service: {self.rpc_name}")
+        try:
+            while True:
+                time.sleep(0.1)
+        except Exception as e:
+            logging.error(f"Error in RPC service: {e}")
+
     @property
     def rpc_name(self):
         return self._rpc_name
