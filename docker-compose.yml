@@ -3,7 +3,7 @@ services:
     image: 1234a4321/app1:1.1
     working_dir: /app
     volumes:
-      - /home/kiriakos/Documents/vs_code/firmwares/app1/docker-compose.yml:/app/docker-compose.yml
+      - /home/kiriakos/Documents/vs_code/firmwares/app1:/app
       - /var/run/docker.sock:/var/run/docker.sock
     environment:
       - REDIS_HOST=${REDIS_HOST}
