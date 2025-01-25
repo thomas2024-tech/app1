@@ -92,60 +92,71 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
 
 class DockerComposeRPCService(BaseRPCService):
     def __init__(self, node: Node, rpc_name: str):
-        self._rpc_name = rpc_name
         super().__init__(
+            name=rpc_name,
+            node=node,
+            # The msg_type is the request type
             msg_type=DockerCommandRequest,
-            rpc_name=rpc_name
-        )
-        self._node = node
-        # Create an RPC service using the node's method
-        self.rpc_service = node.create_rpc_service(
-            rpc_name,
-            DockerCommandRequest,
-            DockerCommandResponse,
-            self.process_request
+            # The reply_type is your response type
+            reply_type=DockerCommandResponse
         )
 
-    @property
-    def rpc_name(self):
-        return self._rpc_name
-
-    def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
+    def on_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
+        """
+        This method is called whenever an RPC request arrives.
+        Return a DockerCommandResponse here.
+        """
         logging.info("📥 Received update request")
+
+        # Validate directory
         if not os.path.exists(message.directory):
-            return DockerCommandResponse(success=False, message=f"Directory not found: {message.directory}")
-        
+            return DockerCommandResponse(
+                success=False,
+                message=f"Directory not found: {message.directory}"
+            )
+
         if message.command == 'update_version':
             try:
-                # Read current compose file
                 docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
                 with open(docker_compose_file, 'r') as file:
                     compose_data = yaml.safe_load(file)
-                
-                # Create new compose file with updated version
+
+                # Build new compose file path
                 new_version = message.new_version
-                new_compose_file = os.path.join(message.directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
-                
-                # Update image version
+                new_compose_file = os.path.join(
+                    message.directory,
+                    f'docker-compose-version{new_version.replace(".", "_")}.yml'
+                )
+
+                # Update the image tag
                 service_name = list(compose_data['services'].keys())[0]
-                image = compose_data['services'][service_name]['image']
-                repo, _ = image.split(':')
+                old_image = compose_data['services'][service_name]['image']
+                repo, _ = old_image.split(':')
                 compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
-                
-                # Write new compose file
+
+                # Write the new file
                 with open(new_compose_file, 'w') as file:
                     yaml.dump(compose_data, file)
-                
-                # Start new version
+
+                # Spin up the new version
                 subprocess.run(["docker-compose", "-f", new_compose_file, "up", "-d"], check=True)
-                
-                # Stop old version
+                # Shut down the old version
                 subprocess.run(["docker-compose", "-f", docker_compose_file, "down"], check=True)
-                
-                return DockerCommandResponse(success=True, message=f"Updated to version {new_version}")
-                
+
+                return DockerCommandResponse(
+                    success=True,
+                    message=f"Updated to version {new_version}"
+                )
             except Exception as e:
-                return DockerCommandResponse(success=False, message=f"Update failed: {str(e)}")
+                return DockerCommandResponse(
+                    success=False,
+                    message=f"Update failed: {str(e)}"
+                )
+
+        return DockerCommandResponse(
+            success=False,
+            message="Unknown command."
+        )
 
 def signal_handler(sig, frame):
     """Handles shutdown signals."""
