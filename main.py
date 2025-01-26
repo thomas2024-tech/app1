@@ -28,7 +28,7 @@ class VersionMessage(PubSubMessage):
     dependencies: dict
 
 # RPC message classes - now properly inheriting from RPCMessage base classes
-class DockerCommandRequest(RPCMessage.Request):  # Changed to inherit from Request
+class DockerCommandRequest(RPCMessage):
     command: str
     directory: str
     new_version: str = None
