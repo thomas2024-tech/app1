@@ -21,14 +21,13 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-##############################
-# Message Classes
-##############################
+# VersionMessage class
 class VersionMessage(PubSubMessage):
     appname: str
     version_number: str
     dependencies: dict
 
+# RPC message classes
 class DockerCommandRequest(RPCMessage):
     command: str
     directory: str
@@ -38,9 +37,6 @@ class DockerCommandResponse(RPCMessage):
     success: bool
     message: str
 
-##############################
-# Helper Functions
-##############################
 def load_docker_compose_data(directory='.', filename='docker-compose.yml'):
     """Reads appname and version_number from the image string in docker-compose.yml."""
     file_path = os.path.join(os.path.abspath(directory), filename)
@@ -57,8 +53,7 @@ def load_docker_compose_data(directory='.', filename='docker-compose.yml'):
             if '/' not in image or ':' not in image:
                 raise ValueError(f"Invalid image format in {file_path}: {image}")
                 
-            # Example image: "username/app1:1.1"
-            appname_with_repo = image.split('/')[1]  # e.g. "app1:1.1"
+            appname_with_repo = image.split('/')[1]
             appname, version_number = appname_with_repo.split(':')
             return appname, version_number
     except FileNotFoundError:
@@ -95,82 +90,42 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
         for dep_app, dep_version in dependencies.items():
             logging.info(f'  Dependent app {dep_app} version {dep_version}')
 
-##############################
-# DockerComposeRPCService
-##############################
-class DockerComposeRPCService(BaseRPCService):
-    def __init__(self, node: Node, rpc_name: str):
-        """
-        Minimal changes:
-        1) Pass 'name=rpc_name' and 'node=node' to BaseRPCService.
-        2) Pass 'on_request=self.process_request' to tell commlib which method to call.
-        """
-        super().__init__(
-            name=rpc_name,
-            node=node,
-            msg_type=DockerCommandRequest,
-            reply_type=DockerCommandResponse,
-            on_request=self.process_request  # <--- Key change
-        )
-
-    def process_request(self, message: DockerCommandRequest) -> DockerCommandResponse:
-        """Handles incoming RPC requests."""
-        logging.info("🔥 START PROCESSING REQUEST")
-        logging.info(f"🔥 Command: {message.command}")
-        logging.info(f"🔥 Directory: {message.directory}")
-        logging.info(f"🔥 New Version: {message.new_version}")
-
-        if not os.path.exists(message.directory):
-            return DockerCommandResponse(
-                success=False,
-                message=f"Directory not found: {message.directory}"
-            )
+def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
+    """Handle incoming Docker commands."""
+    logging.info(f"Processing request: Command={message.command}, Dir={message.directory}, Version={message.new_version}")
+    
+    if message.command == 'update_version':
+        try:
+            # Read current compose file
+            docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
+            with open(docker_compose_file, 'r') as file:
+                compose_data = yaml.safe_load(file)
+            
+            # Create new compose file with updated version
+            new_version = message.new_version
+            new_compose_file = os.path.join(message.directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+            
+            # Update image version
+            service_name = list(compose_data['services'].keys())[0]
+            image = compose_data['services'][service_name]['image']
+            repo, _ = image.split(':')
+            compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
+            
+            # Write new compose file
+            with open(new_compose_file, 'w') as file:
+                yaml.dump(compose_data, file)
+            
+            # Start new version
+            subprocess.run(["docker-compose", "-f", new_compose_file, "up", "-d"], check=True)
+            
+            # Stop old version
+            subprocess.run(["docker-compose", "-f", docker_compose_file, "down"], check=True)
+            
+            return DockerCommandResponse(success=True, message=f"Updated to version {new_version}")
+            
+        except Exception as e:
+            return DockerCommandResponse(success=False, message=f"Update failed: {str(e)}")
         
-        if message.command == 'update_version':
-            try:
-                docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
-                with open(docker_compose_file, 'r') as file:
-                    compose_data = yaml.safe_load(file)
-                
-                new_version = message.new_version
-                new_compose_file = os.path.join(
-                    message.directory,
-                    f'docker-compose-version{new_version.replace(".", "_")}.yml'
-                )
-                
-                # Update image version
-                service_name = list(compose_data['services'].keys())[0]
-                image = compose_data['services'][service_name]['image']
-                repo, _ = image.split(':')
-                compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
-                
-                with open(new_compose_file, 'w') as file:
-                    yaml.dump(compose_data, file)
-                
-                # Spin up the new version
-                subprocess.run(["docker-compose", "-f", new_compose_file, "up", "-d"], check=True)
-                # Shut down the old version
-                subprocess.run(["docker-compose", "-f", docker_compose_file, "down"], check=True)
-                
-                return DockerCommandResponse(
-                    success=True,
-                    message=f"Updated to version {new_version}"
-                )
-            except Exception as e:
-                return DockerCommandResponse(
-                    success=False,
-                    message=f"Update failed: {str(e)}"
-                )
-
-        # If we reach here, unknown command
-        return DockerCommandResponse(
-            success=False,
-            message="Unknown command."
-        )
-
-##############################
-# Main / Entry Point
-##############################
 def signal_handler(sig, frame):
     """Handles shutdown signals."""
     logging.info('Shutdown signal received. Exiting...')
@@ -198,43 +153,42 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
-        # Create connection parameters and Node
+    # Create connection parameters
         conn_params = ConnectionParameters(
             host=redis_ip,
             port=int(os.getenv('REDIS_PORT', 6379)),
             db=int(os.getenv('REDIS_DB', 0))
         )
 
+        # Then create the Node
         node = Node(
             node_name='docker_rpc_server_machine1',
             connection_params=conn_params
         )
 
-        # Instantiate your RPC service
-        service = DockerComposeRPCService(
-            node=node,
-            rpc_name='docker_compose_service_machine1'
+        # Create RPC service using Node's create_rpc method
+        service = node.create_rpc(
+            rpc_name='docker_compose_service_machine1',
+            msg_type=DockerCommandRequest,
+            on_request=process_request
         )
 
-        # 1) Start the node in a background thread
+
+        # Start the node in a background thread
         node_thread = threading.Thread(target=node.run, daemon=True)
         node_thread.start()
 
-        # 2) Also start the service in its own thread so it can receive requests
-        service_thread = threading.Thread(target=service.run, daemon=True)
-        service_thread.start()
-
-        # Define dependencies and channel
+        # Define dependencies and channel (stays the same)
         channel = 'version_channel'
         dependencies = {
             'app2': '1.1',
             'app3': '1.1'
         }
 
-        # Publish version to establish presence
+        # First publish version to establish presence (stays the same)
         publish_version(channel, appname, version_number, redis_ip, dependencies)
 
-        # Periodic version publishing
+        # Set up and start periodic version publishing (stays the same)
         def publish_version_periodically():
             while True:
                 try:
@@ -247,7 +201,6 @@ if __name__ == "__main__":
         publisher_thread = threading.Thread(target=publish_version_periodically, daemon=True)
         publisher_thread.start()
 
-        # Keep the main thread alive
         while True:
             time.sleep(0.1)
             
