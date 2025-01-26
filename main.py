@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 from commlib.node import Node
 from commlib.transports.redis import ConnectionParameters
 from commlib.pubsub import PubSubMessage
-from commlib.rpc import BaseRPCService, RPCMessage
+from commlib.rpc import RPCMessage  # Note we import RPCMessage directly now
 import time
 import threading
 
@@ -21,19 +21,19 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
 )
 
-# VersionMessage class
+# VersionMessage class for publish/subscribe communications
 class VersionMessage(PubSubMessage):
     appname: str
     version_number: str
     dependencies: dict
 
-# RPC message classes
-class DockerCommandRequest(RPCMessage):
+# RPC message classes - now properly inheriting from RPCMessage base classes
+class DockerCommandRequest(RPCMessage.Request):  # Changed to inherit from Request
     command: str
     directory: str
     new_version: str = None
 
-class DockerCommandResponse(RPCMessage):
+class DockerCommandResponse(RPCMessage.Response):  # Changed to inherit from Response
     success: bool
     message: str
 
@@ -125,7 +125,7 @@ def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
             
         except Exception as e:
             return DockerCommandResponse(success=False, message=f"Update failed: {str(e)}")
-        
+
 def signal_handler(sig, frame):
     """Handles shutdown signals."""
     logging.info('Shutdown signal received. Exiting...')
@@ -153,42 +153,42 @@ if __name__ == "__main__":
         sys.exit(1)
 
     try:
-    # Create connection parameters
+        # Create connection parameters
         conn_params = ConnectionParameters(
             host=redis_ip,
             port=int(os.getenv('REDIS_PORT', 6379)),
             db=int(os.getenv('REDIS_DB', 0))
         )
 
-        # Then create the Node
+        # Create the Node
         node = Node(
             node_name='docker_rpc_server_machine1',
             connection_params=conn_params
         )
 
-        # Create RPC service using Node's create_rpc method
+        # Create RPC service with explicit message types
         service = node.create_rpc(
             rpc_name='docker_compose_service_machine1',
-            msg_type=DockerCommandRequest,
+            request_msg_cls=DockerCommandRequest,    # Changed to use request_msg_cls
+            response_msg_cls=DockerCommandResponse,  # Added response message class
             on_request=process_request
         )
-
 
         # Start the node in a background thread
         node_thread = threading.Thread(target=node.run, daemon=True)
         node_thread.start()
 
-        # Define dependencies and channel (stays the same)
+        # Define dependencies and channel
         channel = 'version_channel'
         dependencies = {
             'app2': '1.1',
             'app3': '1.1'
         }
 
-        # First publish version to establish presence (stays the same)
+        # First publish version to establish presence
         publish_version(channel, appname, version_number, redis_ip, dependencies)
 
-        # Set up and start periodic version publishing (stays the same)
+        # Set up and start periodic version publishing
         def publish_version_periodically():
             while True:
                 try:
