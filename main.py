@@ -169,8 +169,7 @@ if __name__ == "__main__":
         # Create RPC service with explicit message types
         service = node.create_rpc(
             rpc_name='docker_compose_service_machine1',
-            request_msg_cls=DockerCommandRequest,    # Changed to use request_msg_cls
-            response_msg_cls=DockerCommandResponse,  # Added response message class
+            msg_type=DockerCommandRequest,
             on_request=process_request
         )
 
