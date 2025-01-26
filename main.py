@@ -92,34 +92,56 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
 
 def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
     try:
-        logging.info(f"⭐ Received message: command={message.command}, dir={message.directory}, version={message.new_version}")
-        # Start new container first
-        new_version = message.new_version
-        docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
-        new_compose_file = os.path.join(message.directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+        logging.info(f"⭐ Received update request: {message}")
         
-        # Create new compose file
+        # Extract service details from existing docker-compose
+        docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
         with open(docker_compose_file, 'r') as file:
             compose_data = yaml.safe_load(file)
-        compose_data['services'][list(compose_data['services'].keys())[0]]['image'] = f"{repo}:{new_version}"
+        
+        # Get first service name and current image
+        service_name = list(compose_data['services'].keys())[0]
+        current_image = compose_data['services'][service_name]['image']
+        repo = current_image.rsplit(':', 1)[0]  # Extract repository part
+
+        # Create new compose file with updated version
+        new_version = message.new_version
+        new_compose_file = os.path.join(message.directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+        
+        compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
         with open(new_compose_file, 'w') as file:
             yaml.dump(compose_data, file)
 
         # Start new container
-        subprocess.run(["docker-compose", "-f", new_compose_file, "up", "-d"], check=True)
+        start_result = subprocess.run(
+            ["docker-compose", "-f", new_compose_file, "up", "-d"], 
+            capture_output=True, 
+            text=True
+        )
+        if start_result.returncode != 0:
+            raise Exception(f"Docker compose up failed: {start_result.stderr}")
         
-        # Send success response BEFORE shutting down
-        response = DockerCommandResponse(success=True, message=f"Starting version {new_version}, shutting down old version")
-        
-        # Schedule shutdown with a small delay to allow response to be sent
+        # Schedule old container shutdown
         def delayed_shutdown():
-            time.sleep(2)
-            subprocess.run(["docker-compose", "-f", docker_compose_file, "down"], check=True)
+            try:
+                time.sleep(5)  # Longer delay to ensure new container is stable
+                subprocess.run(
+                    ["docker-compose", "-f", docker_compose_file, "down"], 
+                    check=True
+                )
+                logging.info(f"Successfully shut down old version")
+            except Exception as e:
+                logging.error(f"Error during shutdown: {e}")
         
         threading.Thread(target=delayed_shutdown, daemon=True).start()
-        return response
+        
+        return DockerCommandResponse(
+            success=True, 
+            message=f"Successfully updated to version {new_version}"
+        )
         
     except Exception as e:
+        logging.error(f"Update failed: {e}")
         return DockerCommandResponse(success=False, message=str(e))
 
 def signal_handler(sig, frame):
