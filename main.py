@@ -94,12 +94,10 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
-        # Use host directory path
-        directory = message.get('directory')
-        docker_compose_path = 'docker-compose.yml'
+        # Use the full path from the message
+        docker_compose_file = message.get('docker_compose_path')
         new_version = message.get('new_version')
-        
-        docker_compose_file = os.path.join(directory, docker_compose_path)
+        directory = message.get('directory')
         
         # Verify file exists
         if not os.path.exists(docker_compose_file):
