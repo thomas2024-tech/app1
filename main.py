@@ -188,7 +188,8 @@ if __name__ == "__main__":
         service = node.create_rpc(
             rpc_name='docker_compose_service_machine1',
             msg_type=DockerCommandRequest,
-            on_request=lambda m: logging.info(f"⭐ Got RPC message: {m}") or process_request(m)  # Add this debug
+            resp_type=DockerCommandResponse,
+            on_request=process_request
         )
 
         # Start the node in a background thread
