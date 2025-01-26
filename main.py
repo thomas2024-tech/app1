@@ -92,7 +92,7 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
 
 def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
     try:
-        logging.info(f"⭐ Received message: {message}") 
+        logging.info(f"⭐ Received message: command={message.command}, dir={message.directory}, version={message.new_version}")
         # Start new container first
         new_version = message.new_version
         docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
