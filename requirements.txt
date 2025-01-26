@@ -14,7 +14,7 @@ commlib-py==0.11.4
 crashtest==0.4.1
 cryptography==43.0.3
 decorator==5.1.1
-docker-compose==1.29.2
+docker-compose
 Deprecated==1.2.14
 distlib==0.3.9
 dulwich==0.22.7
