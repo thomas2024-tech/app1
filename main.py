@@ -94,16 +94,17 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
-        # Extract details from the message dictionary
         directory = message.get('directory', '/app')
         docker_compose_path = message.get('docker_compose_path', 'docker-compose.yml')
         new_version = message.get('new_version')
         
-        if not all([docker_compose_path, directory, new_version]):
-            raise ValueError("Missing required parameters")
-        
-        # Extract service details from existing docker-compose
+        # Use absolute path
         docker_compose_file = os.path.join(directory, docker_compose_path)
+        
+        # Verify file exists before processing
+        if not os.path.exists(docker_compose_file):
+            raise FileNotFoundError(f"Docker compose file not found: {docker_compose_file}")
+        
         with open(docker_compose_file, 'r') as file:
             compose_data = yaml.safe_load(file)
         
@@ -123,7 +124,8 @@ def process_request(message):
         start_result = subprocess.run(
             ["docker-compose", "-f", new_compose_file, "up", "-d"], 
             capture_output=True, 
-            text=True
+            text=True,
+            cwd=directory  # Set working directory
         )
         if start_result.returncode != 0:
             raise Exception(f"Docker compose up failed: {start_result.stderr}")
@@ -134,7 +136,8 @@ def process_request(message):
                 time.sleep(5)  # Longer delay to ensure new container is stable
                 subprocess.run(
                     ["docker-compose", "-f", docker_compose_file, "down"], 
-                    check=True
+                    check=True,
+                    cwd=directory  # Set working directory
                 )
                 logging.info(f"Successfully shut down old version")
             except Exception as e:
