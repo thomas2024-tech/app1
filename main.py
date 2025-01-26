@@ -91,40 +91,32 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
             logging.info(f'  Dependent app {dep_app} version {dep_version}')
 
 def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
-    """Handle incoming Docker commands."""
-    logging.info(f"Processing request: Command={message.command}, Dir={message.directory}, Version={message.new_version}")
-    
-    if message.command == 'update_version':
-        try:
-            # Read current compose file
-            docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
-            with open(docker_compose_file, 'r') as file:
-                compose_data = yaml.safe_load(file)
+    try:
+        logging.info(f"⭐ Processing update request for version {message.new_version}")
+        # Read current compose file
+        docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
+        with open(docker_compose_file, 'r') as file:
+            compose_data = yaml.safe_load(file)
             
-            # Create new compose file with updated version
-            new_version = message.new_version
-            new_compose_file = os.path.join(message.directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
-            
-            # Update image version
-            service_name = list(compose_data['services'].keys())[0]
-            image = compose_data['services'][service_name]['image']
-            repo, _ = image.split(':')
-            compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
-            
-            # Write new compose file
-            with open(new_compose_file, 'w') as file:
-                yaml.dump(compose_data, file)
-            
-            # Start new version
-            subprocess.run(["docker-compose", "-f", new_compose_file, "up", "-d"], check=True)
-            
-            # Stop old version
-            subprocess.run(["docker-compose", "-f", docker_compose_file, "down"], check=True)
-            
-            return DockerCommandResponse(success=True, message=f"Updated to version {new_version}")
-            
-        except Exception as e:
-            return DockerCommandResponse(success=False, message=f"Update failed: {str(e)}")
+        # Create new compose file with updated version
+        new_version = message.new_version
+        new_compose_file = os.path.join(message.directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+        
+        service_name = list(compose_data['services'].keys())[0]
+        image = compose_data['services'][service_name]['image']
+        repo, _ = image.split(':')
+        compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
+        
+        with open(new_compose_file, 'w') as file:
+            yaml.dump(compose_data, file)
+        
+        subprocess.run(["docker-compose", "-f", new_compose_file, "up", "-d"], check=True)
+        subprocess.run(["docker-compose", "-f", docker_compose_file, "down"], check=True)
+        
+        return DockerCommandResponse(success=True, message=f"Updated to version {new_version}")
+    except Exception as e:
+        logging.error(f"Update failed: {str(e)}")
+        return DockerCommandResponse(success=False, message=str(e))
 
 def signal_handler(sig, frame):
     """Handles shutdown signals."""
