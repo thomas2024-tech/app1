@@ -94,14 +94,14 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
-        directory = message.get('directory', '/app')
-        docker_compose_path = message.get('docker_compose_path', 'docker-compose.yml')
+        # Use host directory path
+        directory = message.get('directory')
+        docker_compose_path = 'docker-compose.yml'
         new_version = message.get('new_version')
         
-        # Use absolute path
         docker_compose_file = os.path.join(directory, docker_compose_path)
         
-        # Verify file exists before processing
+        # Verify file exists
         if not os.path.exists(docker_compose_file):
             raise FileNotFoundError(f"Docker compose file not found: {docker_compose_file}")
         
