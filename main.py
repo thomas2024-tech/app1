@@ -95,15 +95,15 @@ def process_request(message):
         logging.info(f"⭐ Received update request: {message}")
         
         # Extract details from the message dictionary
-        command = message.get('command')
-        directory = '/app'
+        directory = message.get('directory', '/app')
+        docker_compose_path = message.get('docker_compose_path', 'docker-compose.yml')
         new_version = message.get('new_version')
         
-        if not all([command, directory, new_version]):
+        if not all([docker_compose_path, directory, new_version]):
             raise ValueError("Missing required parameters")
         
         # Extract service details from existing docker-compose
-        docker_compose_file = os.path.join(directory, 'docker-compose.yml')
+        docker_compose_file = os.path.join(directory, docker_compose_path)
         with open(docker_compose_file, 'r') as file:
             compose_data = yaml.safe_load(file)
         
