@@ -90,12 +90,20 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
         for dep_app, dep_version in dependencies.items():
             logging.info(f'  Dependent app {dep_app} version {dep_version}')
 
-def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
+def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
+        # Extract details from the message dictionary
+        command = message.get('command')
+        directory = message.get('directory')
+        new_version = message.get('new_version')
+        
+        if not all([command, directory, new_version]):
+            raise ValueError("Missing required parameters")
+        
         # Extract service details from existing docker-compose
-        docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
+        docker_compose_file = os.path.join(directory, 'docker-compose.yml')
         with open(docker_compose_file, 'r') as file:
             compose_data = yaml.safe_load(file)
         
@@ -105,8 +113,7 @@ def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
         repo = current_image.rsplit(':', 1)[0]  # Extract repository part
 
         # Create new compose file with updated version
-        new_version = message.new_version
-        new_compose_file = os.path.join(message.directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+        new_compose_file = os.path.join(directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
         
         compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
         with open(new_compose_file, 'w') as file:
@@ -135,14 +142,17 @@ def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
         
         threading.Thread(target=delayed_shutdown, daemon=True).start()
         
-        return DockerCommandResponse(
-            success=True, 
-            message=f"Successfully updated to version {new_version}"
-        )
+        return {
+            'success': True, 
+            'message': f"Successfully updated to version {new_version}"
+        }
         
     except Exception as e:
         logging.error(f"Update failed: {e}")
-        return DockerCommandResponse(success=False, message=str(e))
+        return {
+            'success': False, 
+            'message': str(e)
+        }
 
 def signal_handler(sig, frame):
     """Handles shutdown signals."""
@@ -187,8 +197,6 @@ if __name__ == "__main__":
         # Create RPC service with explicit message types
         service = node.create_rpc(
             rpc_name='docker_compose_service_machine1',
-            msg_type=DockerCommandRequest,
-            resp_type=DockerCommandResponse,
             on_request=process_request
         )
 
