@@ -33,7 +33,7 @@ class DockerCommandRequest(RPCMessage):
     directory: str
     new_version: str = None
 
-class DockerCommandResponse(RPCMessage.Response):  # Changed to inherit from Response
+class DockerCommandResponse(RPCMessage):
     success: bool
     message: str
 
