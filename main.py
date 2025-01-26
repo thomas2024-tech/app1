@@ -92,6 +92,7 @@ def publish_version(channel, appname, version_number, redis_ip, dependencies=Non
 
 def process_request(message: DockerCommandRequest) -> DockerCommandResponse:
     try:
+        logging.info(f"⭐ Received message: {message}") 
         # Start new container first
         new_version = message.new_version
         docker_compose_file = os.path.join(message.directory, 'docker-compose.yml')
@@ -165,7 +166,7 @@ if __name__ == "__main__":
         service = node.create_rpc(
             rpc_name='docker_compose_service_machine1',
             msg_type=DockerCommandRequest,
-            on_request=process_request
+            on_request=lambda m: logging.info(f"⭐ Got RPC message: {m}") or process_request(m)  # Add this debug
         )
 
         # Start the node in a background thread
