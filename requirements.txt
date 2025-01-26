@@ -57,7 +57,7 @@ pyproject_hooks==1.2.0
 python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 python-memcached==1.62
-PyYAML==6.0.1
+PyYAML
 RapidFuzz==3.11.0
 redis==5.2.1
 requests==2.32.3
