@@ -96,7 +96,7 @@ def process_request(message):
         
         # Extract details from the message dictionary
         command = message.get('command')
-        directory = message.get('directory')
+        directory = '/app'
         new_version = message.get('new_version')
         
         if not all([command, directory, new_version]):
