@@ -11,6 +11,7 @@ from commlib.pubsub import PubSubMessage
 from commlib.rpc import RPCMessage  # Note we import RPCMessage directly now
 import time
 import threading
+import docker
 
 # Load environment variables from .env file
 load_dotenv()
@@ -94,8 +95,6 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
-        import docker
-        
         client = docker.from_env()
         container_directory = '/app'
         new_version = message.get('new_version')
@@ -144,14 +143,7 @@ def process_request(message):
 
         logging.info("Creating new container...")
         try:
-            # Stop old container gracefully first
-            for container in client.containers.list(all=True):
-                if service_name in container.name and new_version not in container.name:
-                    logging.info(f"Stopping old container {container.name}")
-                    container.stop(timeout=10)
-                    container.remove()
-
-            # Start new container
+            # Start new container first
             new_container = client.containers.run(
                 image=new_image,
                 detach=True,
@@ -171,9 +163,21 @@ def process_request(message):
                 logs = new_container.logs().decode('utf-8')
                 raise Exception(f"Container failed to start. Logs: {logs}")
 
+            # Schedule shutdown of current container after response is sent
+            def delayed_shutdown():
+                time.sleep(2)  # Small delay to ensure response is sent
+                for container in client.containers.list(all=True):
+                    if service_name in container.name and new_version not in container.name:
+                        logging.info(f"Stopping old container {container.name}")
+                        container.stop(timeout=10)
+                        container.remove()
+
+            import threading
+            threading.Thread(target=delayed_shutdown, daemon=True).start()
+
             return {
                 'success': True,
-                'message': f"Successfully updated to version {new_version}"
+                'message': f"Successfully started version {new_version}, shutting down old version"
             }
 
         except Exception as e:
