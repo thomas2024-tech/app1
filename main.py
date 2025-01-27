@@ -94,12 +94,14 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
-        # Use the full path from the message
-        docker_compose_file = message.get('docker_compose_path')
-        new_version = message.get('new_version')
-        directory = message.get('directory')
+        # Convert host path to container path
+        directory = message.get('directory', '')
+        container_directory = '/app'  # This is where we mounted the volume
+        docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
         
-        # Verify file exists
+        new_version = message.get('new_version')
+        
+        # Verify file exists using container path
         if not os.path.exists(docker_compose_file):
             raise FileNotFoundError(f"Docker compose file not found: {docker_compose_file}")
         
@@ -112,7 +114,8 @@ def process_request(message):
         repo = current_image.rsplit(':', 1)[0]  # Extract repository part
 
         # Create new compose file with updated version
-        new_compose_file = os.path.join(directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+        new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+
         
         compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
         with open(new_compose_file, 'w') as file:
