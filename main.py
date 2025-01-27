@@ -120,11 +120,16 @@ def process_request(message):
         with open(new_compose_file, 'w') as file:
             yaml.dump(new_compose_data, file, default_flow_style=False, sort_keys=False)
 
-        # Set DOCKER_HOST environment variable
+        # Set environment variables for Docker Compose
         env = os.environ.copy()
-        env['DOCKER_HOST'] = 'unix:///var/run/docker.sock'
+        env.update({
+            'DOCKER_HOST': 'unix:///var/run/docker.sock',
+            'COMPOSE_API_VERSION': 'auto',
+            'DOCKER_TLS_VERIFY': '',
+            'DOCKER_CERT_PATH': ''
+        })
         
-        # Start new container with explicit environment
+        # Start new container
         start_result = subprocess.run(
             ["docker-compose", "-f", os.path.basename(new_compose_file), "up", "-d"], 
             capture_output=True, 
@@ -135,7 +140,7 @@ def process_request(message):
         if start_result.returncode != 0:
             raise Exception(f"Docker compose up failed: {start_result.stderr}")
         
-        # Schedule old container shutdown with same environment
+        # Schedule old container shutdown
         def delayed_shutdown():
             try:
                 time.sleep(5)

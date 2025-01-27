@@ -16,11 +16,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
 
-# Also install docker-compose
-RUN curl -L "https://github.com/docker/compose/releases/download/v2.23.0/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose \
+# Install docker-compose v1.29.2 (last v1 release)
+RUN curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose \
     && chmod +x /usr/local/bin/docker-compose
 
-RUN groupadd docker
+# Add Docker group
+RUN groupadd -g 999 docker
 RUN usermod -aG docker root
 
 # Set the working directory in the container
@@ -29,16 +30,16 @@ WORKDIR /app
 # Copy the requirements file into the container
 COPY requirements.txt ./
 
-# Upgrade pip (optional but recommended)
+# Upgrade pip
 RUN pip install --upgrade pip
 
-# Install any needed packages specified in requirements.txt
+# Install dependencies
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the working directory contents into the container
+# Copy the rest of the working directory contents
 COPY . .
 
-# Making port 80 available to the world outside this container
+# Making port 80 available
 EXPOSE 80
 
 # Run main.py when the container launches
