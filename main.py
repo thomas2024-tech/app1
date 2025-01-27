@@ -94,10 +94,15 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
+        import docker
+
         container_directory = '/app'
         new_version = message.get('new_version')
         docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
         new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+        
+        # Create Docker client
+        client = docker.from_env()
         
         # Read existing compose file
         with open(docker_compose_file, 'r') as file:
@@ -114,57 +119,50 @@ def process_request(message):
         service_name = list(new_compose_data['services'].keys())[0]
         current_image = new_compose_data['services'][service_name]['image']
         repo = current_image.rsplit(':', 1)[0]
-        new_compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
+        new_image = f"{repo}:{new_version}"
+        new_compose_data['services'][service_name]['image'] = new_image
         
         # Write the new compose file
         with open(new_compose_file, 'w') as file:
             yaml.dump(new_compose_data, file, default_flow_style=False, sort_keys=False)
 
-        # Set environment variables for Docker Compose
-        env = os.environ.copy()
-        env.update({
-            'DOCKER_HOST': 'unix:///var/run/docker.sock',
-            'COMPOSE_API_VERSION': 'auto',
-            'DOCKER_TLS_VERIFY': '',
-            'DOCKER_CERT_PATH': ''
-        })
+        # Pull the new image
+        client.images.pull(new_image)
         
-        # Start new container
-        start_result = subprocess.run(
-            ["docker-compose", "-f", os.path.basename(new_compose_file), "up", "-d"], 
-            capture_output=True, 
-            text=True,
-            cwd=container_directory,
-            env=env
+        # Get container configuration from compose file
+        container_config = new_compose_data['services'][service_name]
+        
+        # Create and start new container
+        container = client.containers.run(
+            image=new_image,
+            detach=True,
+            name=f"{service_name}-{new_version}",
+            volumes=container_config.get('volumes', []),
+            environment=container_config.get('environment', {}),
+            working_dir=container_config.get('working_dir'),
+            privileged=container_config.get('privileged', False),
+            network=list(new_compose_data['networks'].keys())[0],
+            restart_policy={"Name": "unless-stopped"}
         )
-        if start_result.returncode != 0:
-            raise Exception(f"Docker compose up failed: {start_result.stderr}")
         
-        # Schedule old container shutdown
-        def delayed_shutdown():
-            try:
-                time.sleep(5)
-                subprocess.run(
-                    ["docker-compose", "-f", os.path.basename(docker_compose_file), "down"], 
-                    check=True,
-                    cwd=container_directory,
-                    env=env
-                )
-                logging.info(f"Successfully shut down old version")
-            except Exception as e:
-                logging.error(f"Error during shutdown: {e}")
+        # Wait a bit and then stop old container
+        time.sleep(5)
         
-        threading.Thread(target=delayed_shutdown, daemon=True).start()
-        
+        # Find and stop old container
+        for container in client.containers.list():
+            if service_name in container.name and new_version not in container.name:
+                container.stop()
+                container.remove()
+                
         return {
-            'success': True, 
+            'success': True,
             'message': f"Successfully updated to version {new_version}"
         }
         
     except Exception as e:
         logging.error(f"Update failed: {str(e)}")
         return {
-            'success': False, 
+            'success': False,
             'message': str(e)
         }
     
