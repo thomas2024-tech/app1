@@ -110,7 +110,16 @@ def process_request(message):
         current_image = new_compose_data['services'][service_name]['image']
         repo = current_image.rsplit(':', 1)[0]
         new_image = f"{repo}:{new_version}"
-        new_compose_data['services'][service_name]['image'] = new_image
+
+        # Create new service name with version
+        versioned_service_name = f"{service_name}_{new_version.replace('.', '_')}"
+
+        # Copy service config to new name and delete old one
+        new_compose_data['services'][versioned_service_name] = new_compose_data['services'][service_name].copy()
+        del new_compose_data['services'][service_name]
+
+        # Update image in new service
+        new_compose_data['services'][versioned_service_name]['image'] = new_image
         
         # Write the new compose file
         new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
@@ -125,7 +134,7 @@ def process_request(message):
             network = client.networks.create(network_name, driver='bridge')
 
         # Get container configuration and environment
-        container_config = new_compose_data['services'][service_name]
+        container_config = new_compose_data['services'][versioned_service_name]  # Use new service name
         environment = container_config.get('environment', {})
         
         # Convert environment list to dictionary if needed
@@ -147,7 +156,7 @@ def process_request(message):
             new_container = client.containers.run(
                 image=new_image,
                 detach=True,
-                name=f"{service_name}-{new_version}".replace('.', '_'),
+                name=f"{versioned_service_name}".replace('.', '_'),  # Use new service name
                 volumes=container_config.get('volumes', []),
                 environment=environment,
                 working_dir=container_config.get('working_dir'),
