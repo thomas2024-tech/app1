@@ -95,36 +95,37 @@ def process_request(message):
         logging.info(f"⭐ Received update request: {message}")
         
         container_directory = '/app'
-        host_directory = message.get('directory')
         new_version = message.get('new_version')
-        
-        # Use container paths for file operations
         docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
         new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
         
-        # Verify container directory exists
-        if not os.path.exists(container_directory):
-            raise FileNotFoundError(f"Container directory not found: {container_directory}")
-        
+        # Read existing compose file
         with open(docker_compose_file, 'r') as file:
             compose_data = yaml.safe_load(file)
         
-        # Get first service name and current image
-        service_name = list(compose_data['services'].keys())[0]
-        current_image = compose_data['services'][service_name]['image']
-        repo = current_image.rsplit(':', 1)[0]
+        # Create new compose data with version
+        new_compose_data = {
+            'version': '3.8',  # Add compose file version
+            'services': compose_data['services'],
+            'networks': compose_data['networks']
+        }
         
-        # Update compose file with new version
-        compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
+        # Update the image version
+        service_name = list(new_compose_data['services'].keys())[0]
+        current_image = new_compose_data['services'][service_name]['image']
+        repo = current_image.rsplit(':', 1)[0]
+        new_compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
+        
+        # Write the new compose file
         with open(new_compose_file, 'w') as file:
-            yaml.dump(compose_data, file)
+            yaml.dump(new_compose_data, file, default_flow_style=False, sort_keys=False)
 
-        # Start new container - use host directory for docker-compose commands
+        # Start new container
         start_result = subprocess.run(
             ["docker-compose", "-f", os.path.basename(new_compose_file), "up", "-d"], 
             capture_output=True, 
             text=True,
-            cwd=container_directory  # Use container directory as working directory
+            cwd=container_directory
         )
         if start_result.returncode != 0:
             raise Exception(f"Docker compose up failed: {start_result.stderr}")
