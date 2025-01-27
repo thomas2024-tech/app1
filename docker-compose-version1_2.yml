@@ -1,5 +1,5 @@
 services:
-  app1:
+  app1_1_2:
     image: 1234a4321/app1:1.2
     working_dir: /app
     volumes:
