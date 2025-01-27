@@ -94,58 +94,27 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
-        # Diagnostic checks
-        logging.info("Checking Docker socket...")
-        if os.path.exists('/var/run/docker.sock'):
-            socket_perms = os.stat('/var/run/docker.sock')
-            logging.info(f"Docker socket exists with permissions: {oct(socket_perms.st_mode)}")
-        else:
-            logging.error("Docker socket not found!")
-            
         import docker
         
-        # Try different ways to connect
-        try:
-            client = docker.from_env()
-            logging.info("Successfully created Docker client from env")
-        except Exception as e:
-            logging.error(f"Failed to create client from env: {e}")
-            return {'success': False, 'message': str(e)}
-            
-        try:
-            client = docker.DockerClient(base_url='unix:///var/run/docker.sock')
-            logging.info("Successfully created Docker client with unix socket")
-        except Exception as e:
-            logging.error(f"Failed to create client with unix socket: {e}")
-            return {'success': False, 'message': str(e)}
-
+        client = docker.from_env()
         container_directory = '/app'
         new_version = message.get('new_version')
-        docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
-        new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
         
         # Read existing compose file
+        docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
         with open(docker_compose_file, 'r') as file:
             compose_data = yaml.safe_load(file)
         
         # Create new compose data with version
-        new_compose_data = {
-            'version': '3.8',
-            'services': compose_data['services'],
-            'networks': compose_data['networks']
-        }
-        
-        # Update the image version
+        new_compose_data = compose_data.copy()
         service_name = list(new_compose_data['services'].keys())[0]
         current_image = new_compose_data['services'][service_name]['image']
         repo = current_image.rsplit(':', 1)[0]
         new_image = f"{repo}:{new_version}"
         new_compose_data['services'][service_name]['image'] = new_image
         
-        logging.info(f"Attempting to pull image: {new_image}")
-        client.images.pull(new_image)
-        
         # Write the new compose file
+        new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
         with open(new_compose_file, 'w') as file:
             yaml.dump(new_compose_data, file, default_flow_style=False, sort_keys=False)
 
@@ -153,52 +122,67 @@ def process_request(message):
         network_name = 'app_network'
         try:
             network = client.networks.get(network_name)
-            logging.info(f"Network {network_name} exists")
         except docker.errors.NotFound:
-            logging.info(f"Creating network {network_name}")
-            network = client.networks.create(
-                network_name,
-                driver='bridge'
-            )
+            network = client.networks.create(network_name, driver='bridge')
 
-        # Get container configuration from compose file
+        # Get container configuration and environment
         container_config = new_compose_data['services'][service_name]
+        environment = container_config.get('environment', {})
         
+        # Convert environment list to dictionary if needed
+        if isinstance(environment, list):
+            env_dict = {}
+            for item in environment:
+                if isinstance(item, str) and '=' in item:
+                    key, value = item.split('=', 1)
+                    env_dict[key] = value
+            environment = env_dict
+
+        # Make sure REDIS_HOST is set
+        if 'REDIS_HOST' in environment and '${REDIS_HOST}' in environment['REDIS_HOST']:
+            environment['REDIS_HOST'] = os.getenv('REDIS_HOST', 'localhost')
+
         logging.info("Creating new container...")
-        # Create and start new container with network
-        new_container = client.containers.run(
-            image=new_image,
-            detach=True,
-            name=f"{service_name}-{new_version}".replace('.', '_'),
-            volumes=container_config.get('volumes', []),
-            environment=container_config.get('environment', {}),
-            working_dir=container_config.get('working_dir'),
-            privileged=container_config.get('privileged', False),
-            network=network_name,
-            restart_policy={"Name": "unless-stopped"}
-        )
-        
-        logging.info("Waiting for new container to start...")
-        time.sleep(5)
-        
-        # Find and stop old container
-        logging.info("Stopping old container...")
-        old_containers = []
-        for container in client.containers.list():
-            if service_name in container.name and new_version not in container.name:
-                old_containers.append(container)
-                
-        for container in old_containers:
-            container.stop()
-            container.remove()
-            logging.info(f"Stopped and removed container {container.name}")
-        
-        # Return a proper response
-        return {
-            'success': True,
-            'message': f"Successfully updated to version {new_version}"
-        }
-        
+        try:
+            # Stop old container gracefully first
+            for container in client.containers.list(all=True):
+                if service_name in container.name and new_version not in container.name:
+                    logging.info(f"Stopping old container {container.name}")
+                    container.stop(timeout=10)
+                    container.remove()
+
+            # Start new container
+            new_container = client.containers.run(
+                image=new_image,
+                detach=True,
+                name=f"{service_name}-{new_version}".replace('.', '_'),
+                volumes=container_config.get('volumes', []),
+                environment=environment,
+                working_dir=container_config.get('working_dir'),
+                privileged=True,
+                network=network_name,
+                restart_policy={"Name": "unless-stopped"}
+            )
+            
+            # Wait and check if container is running
+            time.sleep(5)
+            new_container.reload()
+            if new_container.status != 'running':
+                logs = new_container.logs().decode('utf-8')
+                raise Exception(f"Container failed to start. Logs: {logs}")
+
+            return {
+                'success': True,
+                'message': f"Successfully updated to version {new_version}"
+            }
+
+        except Exception as e:
+            logging.error(f"Container start failed: {e}")
+            return {
+                'success': False,
+                'message': f"Container start failed: {e}"
+            }
+
     except Exception as e:
         error_msg = f"Update failed: {str(e)}"
         logging.error(error_msg)
