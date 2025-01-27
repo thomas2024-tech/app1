@@ -9,18 +9,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Set the working directory in the container
 WORKDIR /app
 
-# Copy the requirements file into the container
+# Copy only essential requirements
 COPY requirements.txt ./
 
-# Upgrade pip and install requirements
-RUN pip install --upgrade pip \
-    && pip install --no-cache-dir -r requirements.txt
+# Install Python packages
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the working directory contents
+# Copy the application code
 COPY . .
 
-# Making port 80 available to the world outside this container
+# Expose port 80
 EXPOSE 80
 
-# Run main.py when the container launches
+# Run the application
 CMD ["python", "main.py"]
