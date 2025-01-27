@@ -147,11 +147,23 @@ def process_request(message):
         with open(new_compose_file, 'w') as file:
             yaml.dump(new_compose_data, file, default_flow_style=False, sort_keys=False)
 
+        # Ensure network exists
+        network_name = 'app_network'
+        try:
+            network = client.networks.get(network_name)
+            logging.info(f"Network {network_name} exists")
+        except docker.errors.NotFound:
+            logging.info(f"Creating network {network_name}")
+            network = client.networks.create(
+                network_name,
+                driver='bridge'
+            )
+
         # Get container configuration from compose file
         container_config = new_compose_data['services'][service_name]
         
         logging.info("Creating new container...")
-        # Create and start new container
+        # Create and start new container with network
         container = client.containers.run(
             image=new_image,
             detach=True,
@@ -160,7 +172,7 @@ def process_request(message):
             environment=container_config.get('environment', {}),
             working_dir=container_config.get('working_dir'),
             privileged=container_config.get('privileged', False),
-            network=list(new_compose_data['networks'].keys())[0],
+            network=network_name,  # Use the network name directly
             restart_policy={"Name": "unless-stopped"}
         )
         
