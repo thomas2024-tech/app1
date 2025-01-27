@@ -110,12 +110,14 @@ def process_request(message):
             logging.info("Successfully created Docker client from env")
         except Exception as e:
             logging.error(f"Failed to create client from env: {e}")
+            return {'success': False, 'message': str(e)}
             
         try:
             client = docker.DockerClient(base_url='unix:///var/run/docker.sock')
             logging.info("Successfully created Docker client with unix socket")
         except Exception as e:
             logging.error(f"Failed to create client with unix socket: {e}")
+            return {'success': False, 'message': str(e)}
 
         container_directory = '/app'
         new_version = message.get('new_version')
@@ -164,7 +166,7 @@ def process_request(message):
         
         logging.info("Creating new container...")
         # Create and start new container with network
-        container = client.containers.run(
+        new_container = client.containers.run(
             image=new_image,
             detach=True,
             name=f"{service_name}-{new_version}".replace('.', '_'),
@@ -172,7 +174,7 @@ def process_request(message):
             environment=container_config.get('environment', {}),
             working_dir=container_config.get('working_dir'),
             privileged=container_config.get('privileged', False),
-            network=network_name,  # Use the network name directly
+            network=network_name,
             restart_policy={"Name": "unless-stopped"}
         )
         
@@ -181,21 +183,28 @@ def process_request(message):
         
         # Find and stop old container
         logging.info("Stopping old container...")
+        old_containers = []
         for container in client.containers.list():
             if service_name in container.name and new_version not in container.name:
-                container.stop()
-                container.remove()
+                old_containers.append(container)
                 
+        for container in old_containers:
+            container.stop()
+            container.remove()
+            logging.info(f"Stopped and removed container {container.name}")
+        
+        # Return a proper response
         return {
             'success': True,
             'message': f"Successfully updated to version {new_version}"
         }
         
     except Exception as e:
-        logging.error(f"Update failed: {str(e)}")
+        error_msg = f"Update failed: {str(e)}"
+        logging.error(error_msg)
         return {
             'success': False,
-            'message': str(e)
+            'message': error_msg
         }
     
 def signal_handler(sig, frame):
