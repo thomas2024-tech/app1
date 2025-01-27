@@ -105,7 +105,7 @@ def process_request(message):
         
         # Create new compose data with version
         new_compose_data = {
-            'version': '3.8',  # Add compose file version
+            'version': '3.8',
             'services': compose_data['services'],
             'networks': compose_data['networks']
         }
@@ -120,24 +120,30 @@ def process_request(message):
         with open(new_compose_file, 'w') as file:
             yaml.dump(new_compose_data, file, default_flow_style=False, sort_keys=False)
 
-        # Start new container
+        # Set DOCKER_HOST environment variable
+        env = os.environ.copy()
+        env['DOCKER_HOST'] = 'unix:///var/run/docker.sock'
+        
+        # Start new container with explicit environment
         start_result = subprocess.run(
             ["docker-compose", "-f", os.path.basename(new_compose_file), "up", "-d"], 
             capture_output=True, 
             text=True,
-            cwd=container_directory
+            cwd=container_directory,
+            env=env
         )
         if start_result.returncode != 0:
             raise Exception(f"Docker compose up failed: {start_result.stderr}")
         
-        # Schedule old container shutdown
+        # Schedule old container shutdown with same environment
         def delayed_shutdown():
             try:
                 time.sleep(5)
                 subprocess.run(
                     ["docker-compose", "-f", os.path.basename(docker_compose_file), "down"], 
                     check=True,
-                    cwd=container_directory
+                    cwd=container_directory,
+                    env=env
                 )
                 logging.info(f"Successfully shut down old version")
             except Exception as e:
