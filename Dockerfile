@@ -1,11 +1,24 @@
 # Python 3.9 runtime as parent image
 FROM python:3.9-slim
 
-# Install git and other system dependencies
+# Install git, Docker CLI and other system dependencies
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     git \
+    apt-transport-https \
+    ca-certificates \
+    curl \
+    gnupg \
+    lsb-release \
+    && curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg \
+    && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/debian $(lsb_release -cs) stable" > /etc/apt/sources.list.d/docker.list \
+    && apt-get update \
+    && apt-get install -y docker-ce-cli \
     && rm -rf /var/lib/apt/lists/*
+
+# Also install docker-compose
+RUN curl -L "https://github.com/docker/compose/releases/download/v2.23.0/docker-compose-linux-x86_64" -o /usr/local/bin/docker-compose \
+    && chmod +x /usr/local/bin/docker-compose
 
 # Set the working directory in the container
 WORKDIR /app
