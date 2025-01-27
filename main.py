@@ -94,16 +94,17 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
-        # Convert host path to container path
-        directory = message.get('directory', '')
-        container_directory = '/app'  # This is where we mounted the volume
-        docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
-        
+        container_directory = '/app'
+        host_directory = message.get('directory')
         new_version = message.get('new_version')
         
-        # Verify file exists using container path
-        if not os.path.exists(docker_compose_file):
-            raise FileNotFoundError(f"Docker compose file not found: {docker_compose_file}")
+        # Use container paths for file operations
+        docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
+        new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
+        
+        # Verify container directory exists
+        if not os.path.exists(container_directory):
+            raise FileNotFoundError(f"Container directory not found: {container_directory}")
         
         with open(docker_compose_file, 'r') as file:
             compose_data = yaml.safe_load(file)
@@ -111,22 +112,19 @@ def process_request(message):
         # Get first service name and current image
         service_name = list(compose_data['services'].keys())[0]
         current_image = compose_data['services'][service_name]['image']
-        repo = current_image.rsplit(':', 1)[0]  # Extract repository part
-
-        # Create new compose file with updated version
-        new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
-
+        repo = current_image.rsplit(':', 1)[0]
         
+        # Update compose file with new version
         compose_data['services'][service_name]['image'] = f"{repo}:{new_version}"
         with open(new_compose_file, 'w') as file:
             yaml.dump(compose_data, file)
 
-        # Start new container
+        # Start new container - use host directory for docker-compose commands
         start_result = subprocess.run(
-            ["docker-compose", "-f", new_compose_file, "up", "-d"], 
+            ["docker-compose", "-f", os.path.basename(new_compose_file), "up", "-d"], 
             capture_output=True, 
             text=True,
-            cwd=directory  # Set working directory
+            cwd=container_directory  # Use container directory as working directory
         )
         if start_result.returncode != 0:
             raise Exception(f"Docker compose up failed: {start_result.stderr}")
@@ -134,11 +132,11 @@ def process_request(message):
         # Schedule old container shutdown
         def delayed_shutdown():
             try:
-                time.sleep(5)  # Longer delay to ensure new container is stable
+                time.sleep(5)
                 subprocess.run(
-                    ["docker-compose", "-f", docker_compose_file, "down"], 
+                    ["docker-compose", "-f", os.path.basename(docker_compose_file), "down"], 
                     check=True,
-                    cwd=directory  # Set working directory
+                    cwd=container_directory
                 )
                 logging.info(f"Successfully shut down old version")
             except Exception as e:
@@ -152,12 +150,12 @@ def process_request(message):
         }
         
     except Exception as e:
-        logging.error(f"Update failed: {e}")
+        logging.error(f"Update failed: {str(e)}")
         return {
             'success': False, 
             'message': str(e)
         }
-
+    
 def signal_handler(sig, frame):
     """Handles shutdown signals."""
     logging.info('Shutdown signal received. Exiting...')
