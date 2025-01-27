@@ -100,11 +100,12 @@ def process_request(message):
         container_directory = '/app'
         new_version = message.get('new_version')
         
-        # Create new compose file first
+        # Read existing compose file
         docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
         with open(docker_compose_file, 'r') as file:
             compose_data = yaml.safe_load(file)
         
+        # Create new compose data with version
         new_compose_data = compose_data.copy()
         service_name = list(new_compose_data['services'].keys())[0]
         current_image = new_compose_data['services'][service_name]['image']
@@ -112,38 +113,75 @@ def process_request(message):
         new_image = f"{repo}:{new_version}"
         new_compose_data['services'][service_name]['image'] = new_image
         
+        # Write the new compose file
         new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
         with open(new_compose_file, 'w') as file:
             yaml.dump(new_compose_data, file, default_flow_style=False, sort_keys=False)
 
-        # Start the new container
-        subprocess.run(
-            ['docker-compose', '-f', f'docker-compose-version{new_version.replace(".", "_")}.yml', 'up', '-d'],
-            check=True,
-            cwd=container_directory
-        )
+        # Ensure network exists
+        network_name = 'app_network'
+        try:
+            network = client.networks.get(network_name)
+        except docker.errors.NotFound:
+            network = client.networks.create(network_name, driver='bridge')
 
-        # Wait for new container to be running
-        time.sleep(10)  # Give it time to start
+        # Get container configuration and environment
+        container_config = new_compose_data['services'][service_name]
+        environment = container_config.get('environment', {})
+        
+        # Convert environment list to dictionary if needed
+        if isinstance(environment, list):
+            env_dict = {}
+            for item in environment:
+                if isinstance(item, str) and '=' in item:
+                    key, value = item.split('=', 1)
+                    env_dict[key] = value
+            environment = env_dict
 
-        # Send success response BEFORE stopping ourselves
-        response = {
-            'success': True,
-            'message': f"New version {new_version} container started"
-        }
+        # Make sure REDIS_HOST is set
+        if 'REDIS_HOST' in environment and '${REDIS_HOST}' in environment['REDIS_HOST']:
+            environment['REDIS_HOST'] = os.getenv('REDIS_HOST', 'localhost')
 
-        # Schedule self-termination after response is sent
-        def delayed_shutdown():
-            time.sleep(2)  # Brief delay to ensure response is sent
-            subprocess.run(
-                ['docker-compose', 'down'],
-                check=True,
-                cwd=container_directory
+        logging.info("Creating new container...")
+        try:
+            # Stop old container gracefully first
+            for container in client.containers.list(all=True):
+                if service_name in container.name and new_version not in container.name:
+                    logging.info(f"Stopping old container {container.name}")
+                    container.stop(timeout=10)
+                    container.remove()
+
+            # Start new container
+            new_container = client.containers.run(
+                image=new_image,
+                detach=True,
+                name=f"{service_name}-{new_version}".replace('.', '_'),
+                volumes=container_config.get('volumes', []),
+                environment=environment,
+                working_dir=container_config.get('working_dir'),
+                privileged=True,
+                network=network_name,
+                restart_policy={"Name": "unless-stopped"}
             )
-        
-        threading.Thread(target=delayed_shutdown, daemon=True).start()
-        
-        return response
+            
+            # Wait and check if container is running
+            time.sleep(5)
+            new_container.reload()
+            if new_container.status != 'running':
+                logs = new_container.logs().decode('utf-8')
+                raise Exception(f"Container failed to start. Logs: {logs}")
+
+            return {
+                'success': True,
+                'message': f"Successfully updated to version {new_version}"
+            }
+
+        except Exception as e:
+            logging.error(f"Container start failed: {e}")
+            return {
+                'success': False,
+                'message': f"Container start failed: {e}"
+            }
 
     except Exception as e:
         error_msg = f"Update failed: {str(e)}"
