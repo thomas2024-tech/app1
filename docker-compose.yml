@@ -9,8 +9,6 @@ services:
       - REDIS_HOST=${REDIS_HOST}
       - REDIS_PORT=6379
       - REDIS_DB=0
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - DOCKER_API_VERSION=1.41
     privileged: true
     restart: unless-stopped
     networks:

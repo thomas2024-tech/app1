@@ -94,82 +94,31 @@ def process_request(message):
     try:
         logging.info(f"⭐ Received update request: {message}")
         
-        import docker
-        from docker import DockerClient
-
-        container_directory = '/app'
-        new_version = message.get('new_version')
-        docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
-        new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
-        
-        # Create Docker client with environment variables
-        client = DockerClient.from_env()
-        
-        # Test the connection
-        try:
-            client.ping()
-            logging.info("Successfully connected to Docker daemon")
-        except Exception as e:
-            logging.error(f"Failed to connect to Docker daemon: {e}")
-            raise
+        # Diagnostic checks
+        logging.info("Checking Docker socket...")
+        if os.path.exists('/var/run/docker.sock'):
+            socket_perms = os.stat('/var/run/docker.sock')
+            logging.info(f"Docker socket exists with permissions: {oct(socket_perms.st_mode)}")
+        else:
+            logging.error("Docker socket not found!")
             
-        # Read existing compose file
-        with open(docker_compose_file, 'r') as file:
-            compose_data = yaml.safe_load(file)
+        import docker
         
-        # Create new compose data with version
-        new_compose_data = {
-            'version': '3.8',
-            'services': compose_data['services'],
-            'networks': compose_data['networks']
-        }
-        
-        # Update the image version
-        service_name = list(new_compose_data['services'].keys())[0]
-        current_image = new_compose_data['services'][service_name]['image']
-        repo = current_image.rsplit(':', 1)[0]
-        new_image = f"{repo}:{new_version}"
-        new_compose_data['services'][service_name]['image'] = new_image
-        
-        logging.info(f"Attempting to pull image: {new_image}")
-        client.images.pull(new_image)
-        
-        # Write the new compose file
-        with open(new_compose_file, 'w') as file:
-            yaml.dump(new_compose_data, file, default_flow_style=False, sort_keys=False)
+        # Try different ways to connect
+        try:
+            client = docker.from_env()
+            logging.info("Successfully created Docker client from env")
+        except Exception as e:
+            logging.error(f"Failed to create client from env: {e}")
+            
+        try:
+            client = docker.DockerClient(base_url='unix:///var/run/docker.sock')
+            logging.info("Successfully created Docker client with unix socket")
+        except Exception as e:
+            logging.error(f"Failed to create client with unix socket: {e}")
 
-        # Get container configuration from compose file
-        container_config = new_compose_data['services'][service_name]
-        
-        logging.info("Creating new container...")
-        # Create and start new container
-        container = client.containers.run(
-            image=new_image,
-            detach=True,
-            name=f"{service_name}-{new_version}".replace('.', '_'),
-            volumes=container_config.get('volumes', []),
-            environment=container_config.get('environment', {}),
-            working_dir=container_config.get('working_dir'),
-            privileged=container_config.get('privileged', False),
-            network=list(new_compose_data['networks'].keys())[0],
-            restart_policy={"Name": "unless-stopped"}
-        )
-        
-        logging.info("Waiting for new container to start...")
-        time.sleep(5)
-        
-        # Find and stop old container
-        logging.info("Stopping old container...")
-        for container in client.containers.list():
-            if service_name in container.name and new_version not in container.name:
-                container.stop()
-                container.remove()
-                
-        return {
-            'success': True,
-            'message': f"Successfully updated to version {new_version}"
-        }
-        
+        # Continue with the original code...
+
     except Exception as e:
         logging.error(f"Update failed: {str(e)}")
         return {
