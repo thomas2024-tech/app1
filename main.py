@@ -101,8 +101,8 @@ def process_request(message):
         docker_compose_file = os.path.join(container_directory, 'docker-compose.yml')
         new_compose_file = os.path.join(container_directory, f'docker-compose-version{new_version.replace(".", "_")}.yml')
         
-        # Create Docker client
-        client = docker.from_env()
+        # Create Docker client with explicit socket path
+        client = docker.DockerClient(base_url='unix://var/run/docker.sock')
         
         # Read existing compose file
         with open(docker_compose_file, 'r') as file:
