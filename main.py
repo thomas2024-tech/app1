@@ -256,9 +256,9 @@ if __name__ == "__main__":
 
         # Define dependencies, channel and version number
         channel = 'version_channel'
-        version_number = "1.2"
+        version_number = "1.3"
         dependencies = {
-            'app2': '1.1',
+            'app2': '1.2',
             'app3': '1.1'
         }
 
