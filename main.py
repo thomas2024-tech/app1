@@ -96,7 +96,7 @@ def process_request(message):
         logging.info(f"⭐ Received update request: {message}")
         
         client = docker.from_env()
-        container_directory = '/app'
+        container_directory = '/app/host_dir'
         new_version = message.get('new_version')
         
         # Read existing compose file
@@ -256,7 +256,7 @@ if __name__ == "__main__":
 
         # Define dependencies, channel and version number
         channel = 'version_channel'
-        version_number = "1.2"
+        version_number = "1.1"
         dependencies = {
             'app2': '1.1',
             'app3': '1.1'
