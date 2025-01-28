@@ -64,28 +64,6 @@ def load_docker_compose_data(directory='.', filename='docker-compose.yml'):
         logging.error(f"Error reading {file_path}: {e}")
         sys.exit(1)
 
-def get_current_version(directory='.'):
-    """Gets version from the actual running container's image."""
-    try:
-        client = docker.from_env()
-        # Get our own container ID
-        with open('/proc/self/cgroup', 'r') as f:
-            for line in f:
-                if 'docker' in line:
-                    container_id = line.split('/')[-1].strip()
-                    break
-        
-        # Get container and its image info
-        container = client.containers.get(container_id)
-        image_tag = container.image.tags[0]
-        version = image_tag.split(':')[-1]
-        return version
-    except Exception as e:
-        logging.error(f"Error getting container version: {e}")
-        # Fallback to reading from compose file
-        _, version = load_docker_compose_data(directory)
-        return version
-
 def publish_version(channel, appname, version_number, redis_ip, dependencies=None):
     """Publishes a version message to a specified Redis channel."""
     redis_host = os.getenv('REDIS_HOST', redis_ip)
@@ -246,7 +224,6 @@ if __name__ == "__main__":
 
     # Load appname from docker-compose.yml and version from current container
     appname, _ = load_docker_compose_data(directory=script_dir)  # Get appname only
-    version_number = get_current_version(script_dir)  # Get actual running version
 
     # Check Redis host
     if not redis_ip:
@@ -277,8 +254,9 @@ if __name__ == "__main__":
         node_thread = threading.Thread(target=node.run, daemon=True)
         node_thread.start()
 
-        # Define dependencies and channel
+        # Define dependencies, channel and version number
         channel = 'version_channel'
+        version_number = "1.1"
         dependencies = {
             'app2': '1.1',
             'app3': '1.1'
